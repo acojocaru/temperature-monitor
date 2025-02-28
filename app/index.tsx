@@ -2,9 +2,7 @@ import { Text, View, StyleSheet, TextInput, TouchableOpacity, Alert } from "reac
 import { useEffect, useState, useRef } from "react";
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { styles } from './styles';
-import { TokenConfig } from './components/TokenConfig';
-import { TemperatureRangeConfig } from './components/TemperatureRangeConfig';
-import { TemperatureDisplay } from './components/TemperatureDisplay';
+import * as Linking from 'expo-linking';
 import { 
   registerBackgroundFetch, 
   requestNotificationsPermissions,
@@ -61,6 +59,35 @@ export default function Index() {
     
     loadStoredData();
   }, []);
+  
+  // Check authentication status when app comes to foreground
+  useEffect(() => {
+    const checkAuthStatus = async () => {
+      try {
+        await getValidAccessToken();
+        if (!isAuthenticated) {
+          setIsAuthenticated(true);
+        }
+      } catch (err) {
+        if (isAuthenticated) {
+          setIsAuthenticated(false);
+        }
+      }
+    };
+    
+    // Add event listener for when the app comes to the foreground
+    const subscription = Linking.addEventListener('url', () => {
+      checkAuthStatus();
+    });
+    
+    // Check auth status on mount
+    checkAuthStatus();
+    
+    // Clean up subscription
+    return () => {
+      subscription.remove();
+    };
+  }, [isAuthenticated]);
 
   // Set up scheduled fetching
   useEffect(() => {

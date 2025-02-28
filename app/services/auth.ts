@@ -11,18 +11,15 @@ const TOKEN_EXPIRY_KEY = 'viessmann_token_expiry';
 const CODE_VERIFIER_KEY = 'viessmann_code_verifier';
 
 // OAuth configuration
-const CLIENT_ID = 'your-client-id'; // Replace with your actual client ID
+// Replace with your actual client ID from a secure source (environment variable, config file, etc.)
+const CLIENT_ID = 'your-client-id';
 
 // Use different redirect URIs based on platform and environment
 const getRedirectUri = () => {
   if (Platform.OS === 'web') {
     return 'http://localhost:8081';
-  } else if (__DEV__) {
-    // For development, we use the Expo development server URL
-    return 'exp://localhost:8081';
   } else {
-    // For production, we use our custom URL scheme with host
-    // This is directly registered with Viessmann as a redirect URI
+    // For both development and production on mobile, use our custom URL scheme
     return 'temperaturemonitor://oauth2';
   }
 };
@@ -218,14 +215,34 @@ export const startAuthentication = async (): Promise<void> => {
         // Create a subscription to handle the redirect
         const subscription = Linking.addEventListener('url', async (event) => {
           try {
-            // Check if this is our redirect
-            if (event.url.startsWith(redirectUri)) {
+            // Check for valid redirect URLs with code parameter
+            if ((event.url.includes('oauth2') || event.url.includes('/oauth2')) && event.url.includes('code=')) {
               // Remove the listener
               subscription.remove();
               
               // Parse the URL to get the code
-              const url = new URL(event.url);
-              const code = url.searchParams.get('code');
+              let urlParams = '';
+              if (event.url.includes('?')) {
+                urlParams = event.url.split('?')[1];
+              } else if (event.url.includes('code=')) {
+                urlParams = event.url.substring(event.url.indexOf('code='));
+              }
+              
+              // Extract code parameter
+              let code = null;
+              try {
+                const searchParams = new URLSearchParams(urlParams);
+                code = searchParams.get('code');
+              } catch (e) {
+                // Fallback: extract code manually
+                if (urlParams.includes('code=')) {
+                  const codeStart = urlParams.indexOf('code=') + 5;
+                  const codeEnd = urlParams.indexOf('&', codeStart);
+                  code = codeEnd > codeStart ? 
+                    urlParams.substring(codeStart, codeEnd) : 
+                    urlParams.substring(codeStart);
+                }
+              }
               
               if (code) {
                 // Close the browser if it's still open
@@ -248,9 +265,14 @@ export const startAuthentication = async (): Promise<void> => {
           }
         });
         
-        // Use the appropriate method based on environment
-        // For both dev and production, we can use openAuthSessionAsync with our custom URL scheme
+        // Open auth session
         WebBrowser.openAuthSessionAsync(authUrl, redirectUri)
+          .then(result => {
+            if (result.type === 'cancel') {
+              subscription.remove();
+              reject(new Error('Authentication was cancelled'));
+            }
+          })
           .catch(error => {
             subscription.remove();
             reject(error);
@@ -275,7 +297,7 @@ export const startAuthentication = async (): Promise<void> => {
 };
 
 // Exchange authorization code for tokens
-const exchangeCodeForTokens = async (code: string, codeVerifier: string): Promise<void> => {
+export const exchangeCodeForTokens = async (code: string, codeVerifier: string): Promise<void> => {
   try {
     // Get the same redirect URI that was used for the authorization request
     const redirectUri = getRedirectUri();
