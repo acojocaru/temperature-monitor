@@ -2,9 +2,9 @@ import * as Notifications from 'expo-notifications';
 import * as TaskManager from 'expo-task-manager';
 import * as BackgroundFetch from 'expo-background-fetch';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getValidAccessToken } from './auth';
 
 // Storage keys
-const TOKEN_STORAGE_KEY = 'viessmann_api_token';
 const TEMP_RANGE_STORAGE_KEY = 'temperature_range';
 const LAST_TEMP_KEY = 'last_temperature';
 
@@ -23,10 +23,7 @@ Notifications.setNotificationHandler({
 // Register background task
 TaskManager.defineTask(BACKGROUND_FETCH_TASK, async () => {
   try {
-    // Get token and temperature range from storage
-    const token = await AsyncStorage.getItem(TOKEN_STORAGE_KEY);
-    if (!token) return BackgroundFetch.BackgroundFetchResult.NoData;
-
+    // Get temperature range from storage
     const rangeStr = await AsyncStorage.getItem(TEMP_RANGE_STORAGE_KEY);
     if (!rangeStr) return BackgroundFetch.BackgroundFetchResult.NoData;
     
@@ -35,6 +32,15 @@ TaskManager.defineTask(BACKGROUND_FETCH_TASK, async () => {
     // Get previous temperature
     const prevTempStr = await AsyncStorage.getItem(LAST_TEMP_KEY);
     const previousTemperature = prevTempStr ? parseFloat(prevTempStr) : null;
+    
+    // Get a valid token (will refresh if needed)
+    let token;
+    try {
+      token = await getValidAccessToken();
+    } catch (error) {
+      console.error("Authentication error in background task:", error);
+      return BackgroundFetch.BackgroundFetchResult.Failed;
+    }
     
     // Fetch current temperature
     const response = await fetch(

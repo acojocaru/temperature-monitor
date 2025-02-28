@@ -10,9 +10,13 @@ import {
   requestNotificationsPermissions,
   updateLastTemperature
 } from './services/notifications';
+import {
+  startAuthentication,
+  getValidAccessToken,
+  logout
+} from './services/auth';
 
 // Storage keys
-const TOKEN_STORAGE_KEY = 'viessmann_api_token';
 const TEMP_RANGE_STORAGE_KEY = 'temperature_range';
 
 export default function Index() {
@@ -20,8 +24,7 @@ export default function Index() {
   const [previousTemperature, setPreviousTemperature] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [token, setToken] = useState<string>("");
-  const [showTokenInput, setShowTokenInput] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [lowTemp, setLowTemp] = useState<string>("15");
   const [highTemp, setHighTemp] = useState<string>("25");
@@ -29,14 +32,16 @@ export default function Index() {
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Load token and temperature range from storage on component mount
+  // Load temperature range from storage on component mount
   useEffect(() => {
     const loadStoredData = async () => {
       try {
-        // Load token
-        const savedToken = await AsyncStorage.getItem(TOKEN_STORAGE_KEY);
-        if (savedToken) {
-          setToken(savedToken);
+        // Check if we have a valid token
+        try {
+          await getValidAccessToken();
+          setIsAuthenticated(true);
+        } catch (err) {
+          setIsAuthenticated(false);
         }
         
         // Load temperature range
@@ -47,9 +52,7 @@ export default function Index() {
           setHighTemp(high.toString());
         }
         
-        if (!savedToken) {
-          setLoading(false);
-        }
+        setLoading(false);
       } catch (err) {
         console.error('Error loading stored data:', err);
         setLoading(false);
@@ -61,7 +64,7 @@ export default function Index() {
 
   // Set up scheduled fetching
   useEffect(() => {
-    if (token) {
+    if (isAuthenticated) {
       // Initial fetch
       fetchTemperature();
       
@@ -103,7 +106,7 @@ export default function Index() {
     } else {
       setLoading(false);
     }
-  }, [token]);
+  }, [isAuthenticated]);
 
   // Request permissions and set up background fetch on first load
   useEffect(() => {
@@ -122,6 +125,10 @@ export default function Index() {
   const fetchTemperature = async () => {
     try {
       setLoading(true);
+      
+      // Get a valid token (will refresh if needed)
+      const token = await getValidAccessToken();
+      
       const response = await fetch(
         'https://api.viessmann.com/iot/v1/equipment/installations/2585628/gateways/7736172150862221/devices/0/features/heating.sensors.temperature.outside',
         {
@@ -157,6 +164,12 @@ export default function Index() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An unknown error occurred');
       console.error('Error fetching temperature:', err);
+      
+      // If there's an authentication error, set isAuthenticated to false
+      if (err instanceof Error && 
+          (err.message.includes('token') || err.message.includes('auth'))) {
+        setIsAuthenticated(false);
+      }
     } finally {
       setLoading(false);
     }
@@ -204,22 +217,27 @@ export default function Index() {
     });
   };
 
-  const saveToken = async () => {
+  const handleLogin = async () => {
     try {
-      await AsyncStorage.setItem(TOKEN_STORAGE_KEY, token);
-      setShowTokenInput(false);
+      setLoading(true);
+      await startAuthentication();
+      setIsAuthenticated(true);
     } catch (err) {
-      console.error('Error saving token:', err);
-      setError('Failed to save token');
+      setError(err instanceof Error ? err.message : 'Authentication failed');
+      console.error('Login error:', err);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const clearToken = async () => {
+  const handleLogout = async () => {
     try {
-      await AsyncStorage.removeItem(TOKEN_STORAGE_KEY);
-      setToken("");
+      await logout();
+      setIsAuthenticated(false);
+      setTemperature(null);
+      setPreviousTemperature(null);
     } catch (err) {
-      console.error('Error clearing token:', err);
+      console.error('Logout error:', err);
     }
   };
 
@@ -266,54 +284,25 @@ export default function Index() {
     <View style={styles.container}>
       <Text style={styles.title}>Temperature Monitor</Text>
       
-      {/* Token configuration section */}
-      {!token && !showTokenInput ? (
+      {/* Authentication section */}
+      {!isAuthenticated ? (
         <TouchableOpacity 
           style={styles.configButton}
-          onPress={() => setShowTokenInput(true)}
+          onPress={handleLogin}
         >
-          <Text style={styles.buttonText}>Configure API Token</Text>
+          <Text style={styles.buttonText}>Login with Viessmann Account</Text>
         </TouchableOpacity>
-      ) : null}
-
-      {showTokenInput && (
-        <View style={styles.tokenContainer}>
-          <TextInput
-            style={styles.tokenInput}
-            placeholder="Enter your Viessmann API token"
-            value={token}
-            onChangeText={setToken}
-            secureTextEntry={true}
-          />
-          <TouchableOpacity 
-            style={styles.saveButton}
-            onPress={saveToken}
-          >
-            <Text style={styles.buttonText}>Save Token</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {token && !showTokenInput && (
-        <View style={styles.tokenButtonsContainer}>
-          <TouchableOpacity 
-            style={styles.configButton}
-            onPress={() => setShowTokenInput(true)}
-          >
-            <Text style={styles.buttonText}>Change API Token</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={styles.clearButton}
-            onPress={clearToken}
-          >
-            <Text style={styles.buttonText}>Clear Token</Text>
-          </TouchableOpacity>
-        </View>
+      ) : (
+        <TouchableOpacity 
+          style={styles.clearButton}
+          onPress={handleLogout}
+        >
+          <Text style={styles.buttonText}>Logout</Text>
+        </TouchableOpacity>
       )}
       
       {/* Temperature range configuration */}
-      {token && !showRangeInput ? (
+      {isAuthenticated && !showRangeInput ? (
         <TouchableOpacity 
           style={styles.configButton}
           onPress={() => setShowRangeInput(true)}
@@ -354,7 +343,7 @@ export default function Index() {
       )}
       
       {/* Loading indicator */}
-      {loading && <Text style={styles.message}>Loading temperature data...</Text>}
+      {loading && <Text style={styles.message}>Loading...</Text>}
       
       {/* Error message */}
       {error && <Text style={styles.errorMessage}>Error: {error}</Text>}
@@ -386,8 +375,8 @@ export default function Index() {
         </View>
       )}
       
-      {/* Refresh button - only show if token is configured */}
-      {!loading && token && (
+      {/* Refresh button - only show if authenticated */}
+      {!loading && isAuthenticated && (
         <TouchableOpacity 
           style={styles.refreshButton}
           onPress={fetchTemperature}
