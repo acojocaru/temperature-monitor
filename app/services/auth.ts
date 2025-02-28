@@ -11,7 +11,7 @@ const TOKEN_EXPIRY_KEY = 'viessmann_token_expiry';
 const CODE_VERIFIER_KEY = 'viessmann_code_verifier';
 
 // OAuth configuration
-const CLIENT_ID = ''; // Replace with your actual client ID
+const CLIENT_ID = 'your-client-id'; // Replace with your actual client ID
 
 // Use different redirect URIs based on platform and environment
 const getRedirectUri = () => {
@@ -125,20 +125,15 @@ const base64UrlEncode = (bytes: Uint8Array): string => {
 // Start the OAuth flow
 export const startAuthentication = async (): Promise<void> => {
   try {
-    console.log("Starting authentication process");
-    
     // Generate and store code verifier
     const codeVerifier = generateCodeVerifier();
     await AsyncStorage.setItem(CODE_VERIFIER_KEY, codeVerifier);
-    console.log("Generated code verifier:", codeVerifier.substring(0, 10) + "...");
     
     // Generate code challenge
     const codeChallenge = await generateCodeChallenge(codeVerifier);
-    console.log("Generated code challenge:", codeChallenge.substring(0, 10) + "...");
     
     // Get the appropriate redirect URI
     const redirectUri = getRedirectUri();
-    console.log("Using redirect URI:", redirectUri);
     
     // Construct authorization URL
     const authUrl = `https://iam.viessmann.com/idp/v3/authorize?` +
@@ -149,13 +144,8 @@ export const startAuthentication = async (): Promise<void> => {
       `&code_challenge_method=S256` +
       `&code_challenge=${codeChallenge}`;
     
-    console.log("Auth URL:", authUrl);
-    
     if (Platform.OS === 'web') {
       // Web platform handling
-      console.log("Running on web platform, using popup window");
-      
-      // For web, we'll use window.open with popup parameters
       const width = 600;
       const height = 700;
       const left = window.screenX + (window.outerWidth - width) / 2;
@@ -197,7 +187,6 @@ export const startAuthentication = async (): Promise<void> => {
               authWindow.close();
               
               if (code) {
-                console.log("Got authorization code:", code.substring(0, 5) + "...");
                 // Exchange the code for tokens
                 exchangeCodeForTokens(code, codeVerifier)
                   .then(resolve)
@@ -222,33 +211,14 @@ export const startAuthentication = async (): Promise<void> => {
       });
     } else {
       // Mobile platform handling
-      console.log("Running on mobile platform");
-      
-      // For development on mobile, we need to use a different approach
       if (__DEV__) {
-        console.log("Development mode on mobile");
-        
-        // For development, use a custom scheme that works with Expo Go
-        const devRedirectUri = 'exp://localhost:8081';
-        
-        // Construct a modified auth URL with the dev redirect URI
-        const devAuthUrl = `https://iam.viessmann.com/idp/v3/authorize?` +
-          `client_id=${CLIENT_ID}` +
-          `&redirect_uri=${encodeURIComponent(devRedirectUri)}` +
-          `&scope=${encodeURIComponent('IoT User offline_access')}` +
-          `&response_type=code` +
-          `&code_challenge_method=S256` +
-          `&code_challenge=${codeChallenge}`;
-        
-        // Set up URL event listener before opening browser
+        // Development mode on mobile
         return new Promise((resolve, reject) => {
           // Create a subscription to handle the redirect
           const subscription = Linking.addEventListener('url', async (event) => {
             try {
-              console.log("Got URL event:", event.url);
-              
               // Check if this is our redirect
-              if (event.url.startsWith(devRedirectUri)) {
+              if (event.url.startsWith(redirectUri)) {
                 // Remove the listener
                 subscription.remove();
                 
@@ -257,8 +227,6 @@ export const startAuthentication = async (): Promise<void> => {
                 const code = url.searchParams.get('code');
                 
                 if (code) {
-                  console.log("Got authorization code:", code.substring(0, 5) + "...");
-                  
                   // Close the browser
                   await WebBrowser.dismissBrowser();
                   
@@ -276,7 +244,7 @@ export const startAuthentication = async (): Promise<void> => {
           });
           
           // Open the browser with the auth URL
-          WebBrowser.openBrowserAsync(devAuthUrl).catch(error => {
+          WebBrowser.openBrowserAsync(authUrl).catch(error => {
             subscription.remove();
             reject(error);
           });
@@ -290,15 +258,10 @@ export const startAuthentication = async (): Promise<void> => {
         });
       } else {
         // Production mode on mobile
-        console.log("Production mode on mobile");
-        
-        // Set up URL event listener before opening browser
         return new Promise((resolve, reject) => {
           // Create a subscription to handle the redirect
           const subscription = Linking.addEventListener('url', async (event) => {
             try {
-              console.log("Got URL event:", event.url);
-              
               // Check if this is our redirect
               if (event.url.startsWith(redirectUri)) {
                 // Remove the listener
@@ -309,8 +272,6 @@ export const startAuthentication = async (): Promise<void> => {
                 const code = url.searchParams.get('code');
                 
                 if (code) {
-                  console.log("Got authorization code:", code.substring(0, 5) + "...");
-                  
                   // Close the browser
                   await WebBrowser.dismissBrowser();
                   
@@ -351,13 +312,8 @@ export const startAuthentication = async (): Promise<void> => {
 // Exchange authorization code for tokens
 const exchangeCodeForTokens = async (code: string, codeVerifier: string): Promise<void> => {
   try {
-    console.log("Exchanging code for tokens");
-    console.log("Code:", code.substring(0, 5) + "...");
-    console.log("Code verifier:", codeVerifier.substring(0, 10) + "...");
-    
     // Get the same redirect URI that was used for the authorization request
     const redirectUri = getRedirectUri();
-    console.log("Using redirect URI for token exchange:", redirectUri);
     
     const params = new URLSearchParams({
       client_id: CLIENT_ID,
@@ -367,8 +323,6 @@ const exchangeCodeForTokens = async (code: string, codeVerifier: string): Promis
       code: code,
     });
     
-    console.log("Token request params:", params.toString());
-    
     const response = await fetch('https://iam.viessmann.com/idp/v3/token', {
       method: 'POST',
       headers: {
@@ -377,24 +331,16 @@ const exchangeCodeForTokens = async (code: string, codeVerifier: string): Promis
       body: params.toString(),
     });
     
-    const responseText = await response.text();
-    console.log("Token response status:", response.status);
-    console.log("Token response body:", responseText);
-    
     if (!response.ok) {
-      throw new Error(`Token exchange failed: ${response.status}\n\nThe response body from ${response.url} is:\n${responseText}`);
+      const responseText = await response.text();
+      throw new Error(`Token exchange failed: ${response.status}`);
     }
     
     // Parse the JSON response
-    const data = JSON.parse(responseText);
+    const data = await response.json();
     
     if (!data.access_token) {
-      throw new Error(`No access token in response: ${responseText}`);
-    }
-    
-    console.log("Received access token:", data.access_token.substring(0, 10) + "...");
-    if (data.refresh_token) {
-      console.log("Received refresh token:", data.refresh_token.substring(0, 10) + "...");
+      throw new Error('No access token in response');
     }
     
     // Calculate token expiry time (current time + expires_in seconds)
@@ -406,9 +352,6 @@ const exchangeCodeForTokens = async (code: string, codeVerifier: string): Promis
       await AsyncStorage.setItem(REFRESH_TOKEN_KEY, data.refresh_token);
     }
     await AsyncStorage.setItem(TOKEN_EXPIRY_KEY, expiryTime.toString());
-    
-    console.log("Tokens stored successfully");
-    
   } catch (error) {
     console.error('Token exchange error:', error);
     throw error;
