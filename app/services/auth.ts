@@ -153,10 +153,19 @@ export const startAuthentication = async (): Promise<void> => {
     
     if (Platform.OS === 'web') {
       // Web platform handling
-      console.log("Running on web platform, using window.open");
+      console.log("Running on web platform, using popup window");
       
-      // For web, we'll use window.open and poll for changes
-      const authWindow = window.open(authUrl, '_blank');
+      // For web, we'll use window.open with popup parameters
+      const width = 600;
+      const height = 700;
+      const left = window.screenX + (window.outerWidth - width) / 2;
+      const top = window.screenY + (window.outerHeight - height) / 2;
+      
+      const authWindow = window.open(
+        authUrl, 
+        'ViessmannAuth', 
+        `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes,status=yes`
+      );
       
       if (!authWindow) {
         throw new Error('Failed to open authentication window. Please allow popups for this site.');
@@ -175,25 +184,24 @@ export const startAuthentication = async (): Promise<void> => {
             
             // Try to access the current URL (may throw if cross-origin)
             const currentUrl = authWindow.location.href;
-            console.log("Current auth window URL:", currentUrl);
             
             // Check if we're back at our redirect URI
             if (currentUrl.startsWith(redirectUri)) {
               clearInterval(checkInterval);
-              authWindow.close();
               
               // Parse the URL to get the code
               const url = new URL(currentUrl);
               const code = url.searchParams.get('code');
               
+              // Close the popup window
+              authWindow.close();
+              
               if (code) {
                 console.log("Got authorization code:", code.substring(0, 5) + "...");
-                // Store the code verifier again to ensure it's the same one used for the request
-                AsyncStorage.setItem(CODE_VERIFIER_KEY, codeVerifier).then(() => {
-                  exchangeCodeForTokens(code, codeVerifier)
-                    .then(resolve)
-                    .catch(reject);
-                });
+                // Exchange the code for tokens
+                exchangeCodeForTokens(code, codeVerifier)
+                  .then(resolve)
+                  .catch(reject);
               } else {
                 reject(new Error('No code found in redirect URL'));
               }
