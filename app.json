@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "temperature-notifier",
-    "slug": "temperature-notifier",
+    "name": "Temperature Monitor",
+    "slug": "temperature-monitor",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "temperaturenotifier",
+    "scheme": "temperaturemonitor",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
@@ -13,7 +13,7 @@
       "infoPlist": {
         "UIBackgroundModes": ["fetch"]
       },
-      "bundleIdentifier": "com.yourcompany.temperaturenotifier"
+      "bundleIdentifier": "com.yourcompany.temperaturemonitor"
     },
     "android": {
       "adaptiveIcon": {
@@ -21,7 +21,7 @@
         "backgroundColor": "#ffffff"
       },
       "permissions": ["NOTIFICATIONS", "BACKGROUND_FETCH"],
-      "package": "com.yourcompany.temperaturenotifier"
+      "package": "com.yourcompany.temperaturemonitor"
     },
     "web": {
       "bundler": "metro",
@@ -42,7 +42,6 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/images/notification-icon.png",
           "color": "#ffffff",
           "sounds": []
         }

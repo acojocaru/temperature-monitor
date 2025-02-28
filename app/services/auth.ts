@@ -20,7 +20,7 @@ const getRedirectUri = () => {
   } else if (__DEV__) {
     return 'exp://localhost:8081';
   } else {
-    return 'temperaturenotifier://';
+    return 'temperaturemonitor://';
   }
 };
 
