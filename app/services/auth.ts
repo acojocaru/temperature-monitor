@@ -18,9 +18,12 @@ const getRedirectUri = () => {
   if (Platform.OS === 'web') {
     return 'http://localhost:8081';
   } else if (__DEV__) {
+    // For development, we use the Expo development server URL
     return 'exp://localhost:8081';
   } else {
-    return 'temperaturemonitor://';
+    // For production, we use our custom URL scheme with host
+    // This is directly registered with Viessmann as a redirect URI
+    return 'temperaturemonitor://oauth2';
   }
 };
 
@@ -211,97 +214,59 @@ export const startAuthentication = async (): Promise<void> => {
       });
     } else {
       // Mobile platform handling
-      if (__DEV__) {
-        // Development mode on mobile
-        return new Promise((resolve, reject) => {
-          // Create a subscription to handle the redirect
-          const subscription = Linking.addEventListener('url', async (event) => {
-            try {
-              // Check if this is our redirect
-              if (event.url.startsWith(redirectUri)) {
-                // Remove the listener
-                subscription.remove();
-                
-                // Parse the URL to get the code
-                const url = new URL(event.url);
-                const code = url.searchParams.get('code');
-                
-                if (code) {
-                  // Close the browser
-                  await WebBrowser.dismissBrowser();
-                  
-                  // Exchange the code for tokens
-                  await exchangeCodeForTokens(code, codeVerifier);
-                  resolve();
-                } else {
-                  reject(new Error('No code found in redirect URL'));
-                }
-              }
-            } catch (error) {
+      return new Promise((resolve, reject) => {
+        // Create a subscription to handle the redirect
+        const subscription = Linking.addEventListener('url', async (event) => {
+          try {
+            // Check if this is our redirect
+            if (event.url.startsWith(redirectUri)) {
+              // Remove the listener
               subscription.remove();
-              reject(error);
+              
+              // Parse the URL to get the code
+              const url = new URL(event.url);
+              const code = url.searchParams.get('code');
+              
+              if (code) {
+                // Close the browser if it's still open
+                try {
+                  await WebBrowser.dismissBrowser();
+                } catch (e) {
+                  // Browser might already be closed, ignore error
+                }
+                
+                // Exchange the code for tokens
+                await exchangeCodeForTokens(code, codeVerifier);
+                resolve();
+              } else {
+                reject(new Error('No code found in redirect URL'));
+              }
             }
-          });
-          
-          // Open the browser with the auth URL
-          WebBrowser.openBrowserAsync(authUrl).catch(error => {
+          } catch (error) {
+            subscription.remove();
+            reject(error);
+          }
+        });
+        
+        // Use the appropriate method based on environment
+        // For both dev and production, we can use openAuthSessionAsync with our custom URL scheme
+        WebBrowser.openAuthSessionAsync(authUrl, redirectUri)
+          .catch(error => {
             subscription.remove();
             reject(error);
           });
-          
-          // Set a timeout to clean up if no redirect happens
-          setTimeout(() => {
-            subscription.remove();
+        
+        // Set a timeout to clean up if no redirect happens
+        setTimeout(() => {
+          subscription.remove();
+          try {
             WebBrowser.dismissBrowser().catch(() => {});
-            reject(new Error('Authentication timed out after 5 minutes'));
-          }, 5 * 60 * 1000);
-        });
-      } else {
-        // Production mode on mobile
-        return new Promise((resolve, reject) => {
-          // Create a subscription to handle the redirect
-          const subscription = Linking.addEventListener('url', async (event) => {
-            try {
-              // Check if this is our redirect
-              if (event.url.startsWith(redirectUri)) {
-                // Remove the listener
-                subscription.remove();
-                
-                // Parse the URL to get the code
-                const url = new URL(event.url);
-                const code = url.searchParams.get('code');
-                
-                if (code) {
-                  // Close the browser
-                  await WebBrowser.dismissBrowser();
-                  
-                  // Exchange the code for tokens
-                  await exchangeCodeForTokens(code, codeVerifier);
-                  resolve();
-                } else {
-                  reject(new Error('No code found in redirect URL'));
-                }
-              }
-            } catch (error) {
-              subscription.remove();
-              reject(error);
-            }
-          });
-          
-          // Open the browser with the auth URL
-          WebBrowser.openAuthSessionAsync(authUrl, redirectUri).catch(error => {
-            subscription.remove();
-            reject(error);
-          });
-          
-          // Set a timeout to clean up if no redirect happens
-          setTimeout(() => {
-            subscription.remove();
-            WebBrowser.dismissBrowser().catch(() => {});
-            reject(new Error('Authentication timed out after 5 minutes'));
-          }, 5 * 60 * 1000);
-        });
-      }
+          } catch (e) {
+            // Ignore errors when dismissing browser
+          }
+          reject(new Error('Authentication timed out after 5 minutes'));
+        }, 5 * 60 * 1000);
+      });
     }
   } catch (error) {
     console.error('Authentication error:', error);

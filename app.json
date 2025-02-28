@@ -11,7 +11,12 @@
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
-        "UIBackgroundModes": ["fetch"]
+        "UIBackgroundModes": ["fetch"],
+        "CFBundleURLTypes": [
+          {
+            "CFBundleURLSchemes": ["temperaturemonitor"]
+          }
+        ]
       },
       "bundleIdentifier": "com.yourcompany.temperaturemonitor"
     },
@@ -21,7 +26,20 @@
         "backgroundColor": "#ffffff"
       },
       "permissions": ["NOTIFICATIONS", "BACKGROUND_FETCH"],
-      "package": "com.yourcompany.temperaturemonitor"
+      "package": "com.yourcompany.temperaturemonitor",
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "temperaturemonitor",
+              "host": "oauth2"
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ]
     },
     "web": {
       "bundler": "metro",
