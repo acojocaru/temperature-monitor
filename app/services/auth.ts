@@ -12,23 +12,36 @@ const CODE_VERIFIER_KEY = 'viessmann_code_verifier';
 
 // OAuth configuration
 const CLIENT_ID = ''; // Replace with your actual client ID
-const REDIRECT_URI = __DEV__ 
-  ? 'http://localhost:8081'
-  : 'temperaturenotifier://';
+
+// Use different redirect URIs based on platform and environment
+const getRedirectUri = () => {
+  if (Platform.OS === 'web') {
+    return 'http://localhost:8081';
+  } else if (__DEV__) {
+    return 'exp://localhost:8081';
+  } else {
+    return 'temperaturenotifier://';
+  }
+};
 
 // Generate a random string for code verifier
 const generateCodeVerifier = (): string => {
   // Code verifier should be between 43-128 characters
-  // Using 64 characters for a good balance
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
   let result = '';
-  const randomValues = new Uint8Array(64);
   
-  // Use crypto.getRandomValues for better randomness
-  crypto.getRandomValues(randomValues);
-  
-  for (let i = 0; i < 43; i++) {
-    result += chars[randomValues[i] % chars.length];
+  // Different approach based on platform
+  if (Platform.OS === 'web') {
+    const randomValues = new Uint8Array(43);
+    window.crypto.getRandomValues(randomValues);
+    for (let i = 0; i < 43; i++) {
+      result += chars[randomValues[i] % chars.length];
+    }
+  } else {
+    // For native platforms, use a simpler approach
+    for (let i = 0; i < 43; i++) {
+      result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
   }
   
   return result;
@@ -36,19 +49,25 @@ const generateCodeVerifier = (): string => {
 
 // Generate code challenge from verifier using SHA-256 and base64url encoding
 const generateCodeChallenge = async (verifier: string): Promise<string> => {
-  // 1. Create a SHA-256 hash of the code verifier
-  const encoder = new TextEncoder();
-  const data = encoder.encode(verifier);
-  const digest = await crypto.subtle.digest('SHA-256', data);
+  // Use expo-crypto for consistent behavior across platforms
+  const digest = await Crypto.digestStringAsync(
+    Crypto.CryptoDigestAlgorithm.SHA256,
+    verifier
+  );
   
-  // 2. Base64url encode the hash
-  return base64UrlEncode(digest);
+  // Convert the hex digest to a Uint8Array
+  const bytes = new Uint8Array(digest.length / 2);
+  for (let i = 0; i < digest.length; i += 2) {
+    bytes[i / 2] = parseInt(digest.substring(i, i + 2), 16);
+  }
+  
+  // Base64 encode and convert to base64url
+  return base64UrlEncode(bytes);
 };
 
-// Base64Url encode without using Buffer
-const base64UrlEncode = (arrayBuffer: ArrayBuffer): string => {
-  // Convert ArrayBuffer to Base64
-  const bytes = new Uint8Array(arrayBuffer);
+// Base64Url encode for Uint8Array
+const base64UrlEncode = (bytes: Uint8Array): string => {
+  // Convert to base64
   let base64 = '';
   const encodings = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
   
@@ -117,151 +136,203 @@ export const startAuthentication = async (): Promise<void> => {
     const codeChallenge = await generateCodeChallenge(codeVerifier);
     console.log("Generated code challenge:", codeChallenge.substring(0, 10) + "...");
     
+    // Get the appropriate redirect URI
+    const redirectUri = getRedirectUri();
+    console.log("Using redirect URI:", redirectUri);
+    
     // Construct authorization URL
     const authUrl = `https://iam.viessmann.com/idp/v3/authorize?` +
       `client_id=${CLIENT_ID}` +
-      `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}` +
+      `&redirect_uri=${encodeURIComponent(redirectUri)}` +
       `&scope=${encodeURIComponent('IoT User offline_access')}` +
       `&response_type=code` +
       `&code_challenge_method=S256` +
       `&code_challenge=${codeChallenge}`;
     
     console.log("Auth URL:", authUrl);
-    console.log("Redirect URI:", REDIRECT_URI);
     
-    if (__DEV__) {
-      // Development mode handling
-      console.log("Opening auth in development mode");
+    if (Platform.OS === 'web') {
+      // Web platform handling
+      console.log("Running on web platform, using window.open");
       
-      // For web platform in development, we need a different approach
-      if (Platform.OS === 'web') {
-        console.log("Running on web platform, using window.open");
-        
-        // For web, we'll use window.open and poll for changes
-        const authWindow = window.open(authUrl, '_blank');
-        
-        if (!authWindow) {
-          throw new Error('Failed to open authentication window. Please allow popups for this site.');
-        }
-        
-        // Poll for redirect
-        return new Promise((resolve, reject) => {
-          const checkInterval = setInterval(() => {
-            try {
-              // Check if we can access the window location
-              if (authWindow.closed) {
-                clearInterval(checkInterval);
-                reject(new Error('Authentication window was closed'));
-                return;
-              }
-              
-              // Try to access the current URL (may throw if cross-origin)
-              const currentUrl = authWindow.location.href;
-              console.log("Current auth window URL:", currentUrl);
-              
-              // Check if we're back at our redirect URI
-              if (currentUrl.startsWith(REDIRECT_URI)) {
-                clearInterval(checkInterval);
-                authWindow.close();
-                
-                // Parse the URL to get the code
-                const url = new URL(currentUrl);
-                const code = url.searchParams.get('code');
-                
-                if (code) {
-                  console.log("Got authorization code:", code.substring(0, 5) + "...");
-                  // Store the code verifier again to ensure it's the same one used for the request
-                  AsyncStorage.setItem(CODE_VERIFIER_KEY, codeVerifier).then(() => {
-                    exchangeCodeForTokens(code, codeVerifier)
-                      .then(resolve)
-                      .catch(reject);
-                  });
-                } else {
-                  reject(new Error('No code found in redirect URL'));
-                }
-              }
-            } catch (e) {
-              // Ignore cross-origin errors during polling
-              // console.log("Polling error (likely cross-origin):", e);
-            }
-          }, 500);
-          
-          // Set a timeout to prevent infinite polling
-          setTimeout(() => {
-            clearInterval(checkInterval);
-            if (!authWindow.closed) {
-              authWindow.close();
-            }
-            reject(new Error('Authentication timed out after 5 minutes'));
-          }, 5 * 60 * 1000);
-        });
-      } else {
-        // Native platforms
-        const result = await WebBrowser.openAuthSessionAsync(authUrl, REDIRECT_URI);
-        console.log("WebBrowser result:", JSON.stringify(result));
-        
-        // Check if we got a successful result
-        if (result.type === 'success' && result.url) {
-          console.log("Got successful redirect:", result.url);
-          
-          // Parse the URL to get the code
-          const url = new URL(result.url);
-          const code = url.searchParams.get('code');
-          
-          if (code) {
-            console.log("Got authorization code:", code.substring(0, 5) + "...");
-            await exchangeCodeForTokens(code, codeVerifier);
-            return;
-          } else {
-            console.error("No code found in redirect URL:", result.url);
-            throw new Error('No code found in redirect URL');
-          }
-        } else {
-          console.error("WebBrowser did not return success:", result.type);
-          throw new Error(`Authentication failed: ${result.type}`);
-        }
+      // For web, we'll use window.open and poll for changes
+      const authWindow = window.open(authUrl, '_blank');
+      
+      if (!authWindow) {
+        throw new Error('Failed to open authentication window. Please allow popups for this site.');
       }
-    } else {
-      // Production mode handling with deep linking
+      
+      // Poll for redirect
       return new Promise((resolve, reject) => {
-        // Set up URL listener
-        const subscription = Linking.addEventListener('url', async (event) => {
+        const checkInterval = setInterval(() => {
           try {
-            // Handle the redirect URL
-            const { url } = event;
-            console.log("Got redirect URL:", url);
+            // Check if we can access the window location
+            if (authWindow.closed) {
+              clearInterval(checkInterval);
+              reject(new Error('Authentication window was closed'));
+              return;
+            }
             
-            if (url.includes('code=')) {
-              // Extract the authorization code from URL
-              const code = url.split('code=')[1].split('&')[0];
+            // Try to access the current URL (may throw if cross-origin)
+            const currentUrl = authWindow.location.href;
+            console.log("Current auth window URL:", currentUrl);
+            
+            // Check if we're back at our redirect URI
+            if (currentUrl.startsWith(redirectUri)) {
+              clearInterval(checkInterval);
+              authWindow.close();
+              
+              // Parse the URL to get the code
+              const url = new URL(currentUrl);
+              const code = url.searchParams.get('code');
               
               if (code) {
-                // Exchange code for tokens
-                await exchangeCodeForTokens(code, codeVerifier);
-                
-                // Remove the event listener
-                subscription.remove();
-                
-                resolve();
+                console.log("Got authorization code:", code.substring(0, 5) + "...");
+                // Store the code verifier again to ensure it's the same one used for the request
+                AsyncStorage.setItem(CODE_VERIFIER_KEY, codeVerifier).then(() => {
+                  exchangeCodeForTokens(code, codeVerifier)
+                    .then(resolve)
+                    .catch(reject);
+                });
               } else {
                 reject(new Error('No code found in redirect URL'));
               }
             }
-          } catch (error) {
+          } catch (e) {
+            // Ignore cross-origin errors during polling
+          }
+        }, 500);
+        
+        // Set a timeout to prevent infinite polling
+        setTimeout(() => {
+          clearInterval(checkInterval);
+          if (!authWindow.closed) {
+            authWindow.close();
+          }
+          reject(new Error('Authentication timed out after 5 minutes'));
+        }, 5 * 60 * 1000);
+      });
+    } else {
+      // Mobile platform handling
+      console.log("Running on mobile platform");
+      
+      // For development on mobile, we need to use a different approach
+      if (__DEV__) {
+        console.log("Development mode on mobile");
+        
+        // For development, use a custom scheme that works with Expo Go
+        const devRedirectUri = 'exp://localhost:8081';
+        
+        // Construct a modified auth URL with the dev redirect URI
+        const devAuthUrl = `https://iam.viessmann.com/idp/v3/authorize?` +
+          `client_id=${CLIENT_ID}` +
+          `&redirect_uri=${encodeURIComponent(devRedirectUri)}` +
+          `&scope=${encodeURIComponent('IoT User offline_access')}` +
+          `&response_type=code` +
+          `&code_challenge_method=S256` +
+          `&code_challenge=${codeChallenge}`;
+        
+        // Set up URL event listener before opening browser
+        return new Promise((resolve, reject) => {
+          // Create a subscription to handle the redirect
+          const subscription = Linking.addEventListener('url', async (event) => {
+            try {
+              console.log("Got URL event:", event.url);
+              
+              // Check if this is our redirect
+              if (event.url.startsWith(devRedirectUri)) {
+                // Remove the listener
+                subscription.remove();
+                
+                // Parse the URL to get the code
+                const url = new URL(event.url);
+                const code = url.searchParams.get('code');
+                
+                if (code) {
+                  console.log("Got authorization code:", code.substring(0, 5) + "...");
+                  
+                  // Close the browser
+                  await WebBrowser.dismissBrowser();
+                  
+                  // Exchange the code for tokens
+                  await exchangeCodeForTokens(code, codeVerifier);
+                  resolve();
+                } else {
+                  reject(new Error('No code found in redirect URL'));
+                }
+              }
+            } catch (error) {
+              subscription.remove();
+              reject(error);
+            }
+          });
+          
+          // Open the browser with the auth URL
+          WebBrowser.openBrowserAsync(devAuthUrl).catch(error => {
             subscription.remove();
             reject(error);
-          }
+          });
+          
+          // Set a timeout to clean up if no redirect happens
+          setTimeout(() => {
+            subscription.remove();
+            WebBrowser.dismissBrowser().catch(() => {});
+            reject(new Error('Authentication timed out after 5 minutes'));
+          }, 5 * 60 * 1000);
         });
+      } else {
+        // Production mode on mobile
+        console.log("Production mode on mobile");
         
-        // Open browser for authentication
-        WebBrowser.openAuthSessionAsync(
-          authUrl,
-          REDIRECT_URI
-        ).catch(error => {
-          subscription.remove();
-          reject(error);
+        // Set up URL event listener before opening browser
+        return new Promise((resolve, reject) => {
+          // Create a subscription to handle the redirect
+          const subscription = Linking.addEventListener('url', async (event) => {
+            try {
+              console.log("Got URL event:", event.url);
+              
+              // Check if this is our redirect
+              if (event.url.startsWith(redirectUri)) {
+                // Remove the listener
+                subscription.remove();
+                
+                // Parse the URL to get the code
+                const url = new URL(event.url);
+                const code = url.searchParams.get('code');
+                
+                if (code) {
+                  console.log("Got authorization code:", code.substring(0, 5) + "...");
+                  
+                  // Close the browser
+                  await WebBrowser.dismissBrowser();
+                  
+                  // Exchange the code for tokens
+                  await exchangeCodeForTokens(code, codeVerifier);
+                  resolve();
+                } else {
+                  reject(new Error('No code found in redirect URL'));
+                }
+              }
+            } catch (error) {
+              subscription.remove();
+              reject(error);
+            }
+          });
+          
+          // Open the browser with the auth URL
+          WebBrowser.openAuthSessionAsync(authUrl, redirectUri).catch(error => {
+            subscription.remove();
+            reject(error);
+          });
+          
+          // Set a timeout to clean up if no redirect happens
+          setTimeout(() => {
+            subscription.remove();
+            WebBrowser.dismissBrowser().catch(() => {});
+            reject(new Error('Authentication timed out after 5 minutes'));
+          }, 5 * 60 * 1000);
         });
-      });
+      }
     }
   } catch (error) {
     console.error('Authentication error:', error);
@@ -276,9 +347,13 @@ const exchangeCodeForTokens = async (code: string, codeVerifier: string): Promis
     console.log("Code:", code.substring(0, 5) + "...");
     console.log("Code verifier:", codeVerifier.substring(0, 10) + "...");
     
+    // Get the same redirect URI that was used for the authorization request
+    const redirectUri = getRedirectUri();
+    console.log("Using redirect URI for token exchange:", redirectUri);
+    
     const params = new URLSearchParams({
       client_id: CLIENT_ID,
-      redirect_uri: REDIRECT_URI,
+      redirect_uri: redirectUri,
       grant_type: 'authorization_code',
       code_verifier: codeVerifier,
       code: code,
