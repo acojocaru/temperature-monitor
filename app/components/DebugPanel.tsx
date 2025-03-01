@@ -15,7 +15,8 @@ const DebugPanel = () => {
     unregisterBackgroundTask,
     backgroundStatus,
     logs,
-    clearLogs
+    clearLogs,
+    loadLogs
   } = useDebugStore();
   
   const formatTimestamp = (timestamp: string) => {
@@ -83,25 +84,37 @@ const DebugPanel = () => {
       <View style={styles.section}>
         <View style={styles.logHeader}>
           <Text style={styles.sectionTitle}>Background Task Logs</Text>
-          <TouchableOpacity style={styles.clearButton} onPress={clearLogs}>
-            <Text style={styles.clearButtonText}>Clear</Text>
-          </TouchableOpacity>
+          <View style={styles.logActions}>
+            <TouchableOpacity style={styles.logButton} onPress={loadLogs}>
+              <Text style={styles.logButtonText}>Reload</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.logButton} onPress={clearLogs}>
+              <Text style={styles.logButtonText}>Clear</Text>
+            </TouchableOpacity>
+          </View>
         </View>
         
-        <ScrollView style={styles.logContainer}>
-          {logs.length === 0 ? (
-            <Text style={styles.emptyLogs}>No logs available</Text>
-          ) : (
-            logs.map((log, index) => (
-              <View key={index} style={styles.logEntry}>
-                <Text style={styles.logTimestamp}>
-                  {formatTimestamp(log.timestamp)}
-                </Text>
-                <Text style={styles.logMessage}>{log.message}</Text>
-              </View>
-            ))
-          )}
-        </ScrollView>
+        <View style={styles.logContainerWrapper}>
+          <ScrollView 
+            style={styles.logContainer}
+            contentContainerStyle={styles.logContentContainer}
+            nestedScrollEnabled={true}
+            showsVerticalScrollIndicator={true}
+          >
+            {logs.length === 0 ? (
+              <Text style={styles.emptyLogs}>No logs available</Text>
+            ) : (
+              logs.map((log, index) => (
+                <View key={index} style={styles.logEntry}>
+                  <Text style={styles.logTimestamp}>
+                    {formatTimestamp(log.timestamp)}
+                  </Text>
+                  <Text style={styles.logMessage}>{log.message}</Text>
+                </View>
+              ))
+            )}
+          </ScrollView>
+        </View>
       </View>
     </View>
   );
@@ -197,6 +210,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 10,
   },
+  logActions: {
+    flexDirection: 'row',
+  },
+  logButton: {
+    backgroundColor: '#6c757d',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 5,
+    marginLeft: 8,
+  },
+  logButtonText: {
+    color: 'white',
+    fontSize: 12,
+  },
   clearButton: {
     backgroundColor: '#6c757d',
     paddingHorizontal: 10,
@@ -207,11 +234,18 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 12,
   },
-  logContainer: {
-    maxHeight: 200,
-    backgroundColor: '#343a40',
+  logContainerWrapper: {
+    height: 200,
     borderRadius: 5,
+    overflow: 'hidden',
+  },
+  logContainer: {
+    flex: 1,
+    backgroundColor: '#343a40',
     padding: 10,
+  },
+  logContentContainer: {
+    paddingBottom: 10,
   },
   emptyLogs: {
     color: '#adb5bd',
