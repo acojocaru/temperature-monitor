@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { Alert, Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   registerBackgroundFetch,
   unregisterBackgroundFetch,
@@ -8,6 +9,9 @@ import {
   clearBackgroundLogs,
   getBackgroundTaskStatus
 } from '../services/notifications';
+
+// Key for storing debug preferences in AsyncStorage
+const DEBUG_PREFS_KEY = 'temperature_monitor_debug_prefs';
 
 export interface BackgroundStatus {
   isRegistered: boolean;
@@ -31,6 +35,7 @@ export interface DebugState {
   unregisterBackgroundTask: () => Promise<void>;
   loadLogs: () => Promise<void>;
   clearLogs: () => Promise<void>;
+  loadDebugPreferences: () => Promise<void>;
 }
 
 export const useDebugStore = create<DebugState>((set, get) => ({
@@ -47,6 +52,12 @@ export const useDebugStore = create<DebugState>((set, get) => ({
     
     const newState = !get().showDebugInfo;
     set({ showDebugInfo: newState });
+    
+    // Persist the debug preference
+    AsyncStorage.setItem(
+      DEBUG_PREFS_KEY,
+      JSON.stringify({ showDebugInfo: newState })
+    ).catch(err => console.error('Failed to persist debug preferences:', err));
     
     if (newState) {
       // Load debug info when showing
@@ -111,6 +122,25 @@ export const useDebugStore = create<DebugState>((set, get) => ({
     } catch (error) {
       console.error('Error clearing background logs:', error);
       Alert.alert('Error', 'Failed to clear background logs');
+    }
+  },
+  
+  loadDebugPreferences: async () => {
+    try {
+      const savedPrefs = await AsyncStorage.getItem(DEBUG_PREFS_KEY);
+      if (savedPrefs) {
+        const { showDebugInfo } = JSON.parse(savedPrefs);
+        set({ showDebugInfo: showDebugInfo || false });
+        
+        // If debug info is shown, load the related data
+        if (showDebugInfo && Platform.OS !== 'web') {
+          get().checkBackgroundStatus();
+          get().loadLogs();
+        }
+      }
+    } catch (error) {
+      console.error('Error loading debug preferences:', error);
+      // Continue with default values if loading fails
     }
   }
 })); 

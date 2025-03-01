@@ -5,6 +5,7 @@ import { useTemperature } from "./hooks/useTemperature";
 import { useAuthStore } from "./stores/authStore";
 import { useDebugStore } from "./stores/debugStore";
 import { useTemperatureStore } from "./stores/temperatureStore";
+import { useSettingsStore } from "./stores/settingsStore";
 import LoginForm from "./components/LoginForm";
 import TemperatureDisplay from "./components/TemperatureDisplay";
 import DebugPanel from "./components/DebugPanel";
@@ -15,7 +16,10 @@ export default function TemperatureMonitor() {
   const [showSettings, setShowSettings] = useState(false);
   
   // Auth store
-  const { isAuthenticated, logout } = useAuthStore();
+  const { isAuthenticated, logout, hydrate } = useAuthStore();
+  
+  // Settings store
+  const { loadSettings } = useSettingsStore();
   
   // Debug store
   const { 
@@ -27,11 +31,12 @@ export default function TemperatureMonitor() {
     backgroundStatus,
     loadLogs,
     clearLogs,
-    logs
+    logs,
+    loadDebugPreferences
   } = useDebugStore();
   
   // Temperature store
-  const { processNewTemperature } = useTemperatureStore();
+  const { processNewTemperature, loadTemperatureData } = useTemperatureStore();
   
   // Temperature data from API
   const { 
@@ -41,6 +46,26 @@ export default function TemperatureMonitor() {
     error, 
     refetch 
   } = useTemperature();
+  
+  // Hydrate auth state when app loads
+  useEffect(() => {
+    hydrate();
+  }, [hydrate]);
+  
+  // Load settings when app loads
+  useEffect(() => {
+    loadSettings();
+  }, [loadSettings]);
+  
+  // Load temperature data when app loads
+  useEffect(() => {
+    loadTemperatureData();
+  }, [loadTemperatureData]);
+  
+  // Load debug preferences when app loads
+  useEffect(() => {
+    loadDebugPreferences();
+  }, [loadDebugPreferences]);
   
   // Process new temperature data when it arrives
   useEffect(() => {

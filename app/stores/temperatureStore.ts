@@ -1,6 +1,10 @@
 import { create } from 'zustand';
 import { Alert } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSettingsStore } from './settingsStore';
+
+// Key for storing temperature data in AsyncStorage
+const TEMPERATURE_DATA_KEY = 'temperature_monitor_temp_data';
 
 export interface TemperatureState {
   currentTemperature: number | null;
@@ -11,6 +15,7 @@ export interface TemperatureState {
   checkTemperatureTransition: (currentTemp: number) => void;
   isTemperatureInRange: (temperature: number) => boolean;
   processNewTemperature: (temperature: number) => void;
+  loadTemperatureData: () => Promise<void>;
 }
 
 export const useTemperatureStore = create<TemperatureState>((set, get) => ({
@@ -19,6 +24,15 @@ export const useTemperatureStore = create<TemperatureState>((set, get) => ({
   
   setPreviousTemperature: (value) => {
     set({ previousTemperature: value });
+    // Persist temperature data
+    const { currentTemperature } = get();
+    AsyncStorage.setItem(
+      TEMPERATURE_DATA_KEY,
+      JSON.stringify({ 
+        currentTemperature, 
+        previousTemperature: value 
+      })
+    ).catch(err => console.error('Failed to persist temperature data:', err));
   },
   
   checkTemperatureTransition: (currentTemp) => {
@@ -69,5 +83,30 @@ export const useTemperatureStore = create<TemperatureState>((set, get) => ({
     
     // Update current temperature
     set({ currentTemperature: temperature });
+    
+    // Persist temperature data
+    AsyncStorage.setItem(
+      TEMPERATURE_DATA_KEY,
+      JSON.stringify({ 
+        currentTemperature: temperature, 
+        previousTemperature: get().previousTemperature 
+      })
+    ).catch(err => console.error('Failed to persist temperature data:', err));
+  },
+  
+  loadTemperatureData: async () => {
+    try {
+      const savedData = await AsyncStorage.getItem(TEMPERATURE_DATA_KEY);
+      if (savedData) {
+        const { currentTemperature, previousTemperature } = JSON.parse(savedData);
+        set({ 
+          currentTemperature: currentTemperature !== undefined ? currentTemperature : null, 
+          previousTemperature: previousTemperature !== undefined ? previousTemperature : null 
+        });
+      }
+    } catch (error) {
+      console.error('Error loading temperature data:', error);
+      // Continue with default values if loading fails
+    }
   }
 })); 
