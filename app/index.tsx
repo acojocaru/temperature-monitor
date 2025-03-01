@@ -1,4 +1,4 @@
-import { Text, View, StyleSheet, TextInput, TouchableOpacity, Alert, ScrollView, Platform } from "react-native";
+import { View, ScrollView, Alert, Platform } from "react-native";
 import React, { useEffect, useState, useRef } from "react";
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { styles } from './styles';
@@ -18,6 +18,14 @@ import {
   getValidAccessToken,
   logout
 } from './services/auth';
+
+// Components
+import TemperatureDisplay from './components/TemperatureDisplay';
+import TemperatureRangeConfig from './components/TemperatureRangeConfig';
+import AuthenticationSection from './components/AuthenticationSection';
+import DebugPanel from './components/DebugPanel';
+import RefreshButton from './components/RefreshButton';
+import Header from './components/Header';
 
 // Storage keys
 const TEMP_RANGE_STORAGE_KEY = 'temperature_range';
@@ -295,17 +303,6 @@ export default function TemperatureMonitor() {
     }
   };
 
-  const formatDateTime = (date: Date): string => {
-    return date.toLocaleString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit'
-    });
-  };
-
   const handleLogin = async () => {
     try {
       setLoading(true);
@@ -431,228 +428,63 @@ export default function TemperatureMonitor() {
   return (
     <ScrollView style={styles.scrollContainer}>
       <View style={styles.container}>
-        <Text style={styles.title}>Temperature Monitor</Text>
+        <Header title="Temperature Monitor" />
         
         {/* Authentication section */}
-        {!isAuthenticated ? (
-          <TouchableOpacity 
-            style={styles.configButton}
-            onPress={handleLogin}
-          >
-            <Text style={styles.buttonText}>Login with Viessmann Account</Text>
-          </TouchableOpacity>
-        ) : (
-          <TouchableOpacity 
-            style={styles.clearButton}
-            onPress={handleLogout}
-          >
-            <Text style={styles.buttonText}>Logout</Text>
-          </TouchableOpacity>
-        )}
+        <AuthenticationSection 
+          isAuthenticated={isAuthenticated}
+          handleLogin={handleLogin}
+          handleLogout={handleLogout}
+        />
         
         {/* Temperature range configuration */}
-        {isAuthenticated && !showRangeInput ? (
-          <TouchableOpacity 
-            style={styles.configButton}
-            onPress={() => setShowRangeInput(true)}
-          >
-            <Text style={styles.buttonText}>Configure Temperature Range</Text>
-          </TouchableOpacity>
-        ) : null}
-
-        {showRangeInput && (
-          <View style={styles.rangeContainer}>
-            <View style={styles.rangeInputRow}>
-              <Text style={styles.rangeLabel}>Low:</Text>
-              <TextInput
-                style={styles.rangeInput}
-                placeholder="Min °C"
-                value={lowTemp}
-                onChangeText={setLowTemp}
-                keyboardType="numeric"
-              />
-            </View>
-            <View style={styles.rangeInputRow}>
-              <Text style={styles.rangeLabel}>High:</Text>
-              <TextInput
-                style={styles.rangeInput}
-                placeholder="Max °C"
-                value={highTemp}
-                onChangeText={setHighTemp}
-                keyboardType="numeric"
-              />
-            </View>
-            <TouchableOpacity 
-              style={styles.saveButton}
-              onPress={saveTemperatureRange}
-            >
-              <Text style={styles.buttonText}>Save Range</Text>
-            </TouchableOpacity>
-          </View>
+        {isAuthenticated && (
+          <TemperatureRangeConfig
+            lowTemp={lowTemp}
+            highTemp={highTemp}
+            setLowTemp={setLowTemp}
+            setHighTemp={setHighTemp}
+            saveTemperatureRange={saveTemperatureRange}
+            showRangeInput={showRangeInput}
+            setShowRangeInput={setShowRangeInput}
+          />
         )}
-        
-        {/* Loading indicator */}
-        {loading && <Text style={styles.message}>Loading...</Text>}
-        
-        {/* Error message */}
-        {error && <Text style={styles.errorMessage}>Error: {error}</Text>}
         
         {/* Temperature display */}
-        {temperature !== null && !loading && !error && (
-          <View style={styles.temperatureContainer}>
-            <Text style={[
-              styles.temperature, 
-              isTemperatureInRange() ? styles.tempInRange : styles.tempOutOfRange
-            ]}>
-              {temperature}°C
-            </Text>
-            <Text style={styles.description}>Current Outside Temperature</Text>
-            {lastUpdated && (
-              <Text style={styles.lastUpdated}>
-                Last updated: {formatDateTime(lastUpdated)}
-              </Text>
-            )}
-            <Text style={styles.rangeInfo}>
-              Target range: {lowTemp}°C - {highTemp}°C
-            </Text>
-            <Text style={[
-              styles.rangeStatus,
-              isTemperatureInRange() ? styles.inRangeText : styles.outOfRangeText
-            ]}>
-              {isTemperatureInRange() ? "Within range" : "Out of range"}
-            </Text>
-          </View>
-        )}
+        <TemperatureDisplay
+          temperature={temperature}
+          loading={loading}
+          error={error}
+          lastUpdated={lastUpdated}
+          lowTemp={lowTemp}
+          highTemp={highTemp}
+          isTemperatureInRange={isTemperatureInRange}
+        />
         
         {/* Refresh button - only show if authenticated */}
         {!loading && isAuthenticated && (
-          <TouchableOpacity 
-            style={styles.refreshButton}
+          <RefreshButton 
             onPress={fetchTemperature}
-          >
-            <Text style={styles.buttonText}>Refresh</Text>
-          </TouchableOpacity>
+            loading={loading}
+          />
         )}
         
-        {/* Debug section toggle - hide on web */}
-        {!isWeb && (
-          <TouchableOpacity 
-            style={styles.debugButton}
-            onPress={toggleDebugInfo}
-          >
-            <Text style={styles.buttonText}>
-              {showDebugInfo ? "Hide Debug Info" : "Show Debug Info"}
-            </Text>
-          </TouchableOpacity>
-        )}
-        
-        {/* Debug information section */}
-        {showDebugInfo && !isWeb && (
-          <View style={styles.debugContainer}>
-            <Text style={styles.debugTitle}>Debug Information</Text>
-            
-            {/* Background fetch status */}
-            <TouchableOpacity 
-              style={styles.debugActionButton}
-              onPress={async () => {
-                await checkBackgroundStatus();
-                await checkDetailedBackgroundStatus();
-              }}
-            >
-              <Text style={styles.buttonText}>Check Background Status</Text>
-            </TouchableOpacity>
-            
-            {backgroundStatus && (
-              <View style={styles.statusContainer}>
-                <Text style={styles.debugText}>
-                  Status: {backgroundStatus.statusText}
-                </Text>
-                <Text style={styles.debugText}>
-                  Registered: {backgroundStatus.isRegistered ? 'Yes' : 'No'}
-                </Text>
-                <Text style={styles.debugText}>
-                  Interval: {backgroundStatus.isRegistered ? '15 minutes' : 'N/A'}
-                </Text>
-                
-                {detailedTaskStatus && (
-                  <>
-                    <Text style={styles.debugSubtitle}>Task Execution:</Text>
-                    <Text style={styles.debugText}>
-                      Last Registered: {detailedTaskStatus.lastRegistration 
-                        ? new Date(detailedTaskStatus.lastRegistration).toLocaleString() 
-                        : 'Never'}
-                    </Text>
-                    <Text style={styles.debugText}>
-                      Last Started: {detailedTaskStatus.lastExecutionStart 
-                        ? new Date(detailedTaskStatus.lastExecutionStart).toLocaleString() 
-                        : 'Never'}
-                    </Text>
-                    <Text style={styles.debugText}>
-                      Last Completed: {detailedTaskStatus.lastExecutionCompletion 
-                        ? new Date(detailedTaskStatus.lastExecutionCompletion).toLocaleString() 
-                        : 'Never'}
-                    </Text>
-                    <Text style={styles.debugText}>
-                      Note: System may delay background tasks beyond the requested interval.
-                    </Text>
-                  </>
-                )}
-              </View>
-            )}
-            
-            {/* Background task management */}
-            <View style={styles.buttonRow}>
-              <TouchableOpacity 
-                style={[styles.smallActionButton, styles.registerButton]}
-                onPress={handleRegisterBackgroundTask}
-              >
-                <Text style={styles.buttonText}>Register Task</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.smallActionButton, styles.unregisterButton]}
-                onPress={handleUnregisterBackgroundTask}
-              >
-                <Text style={styles.buttonText}>Unregister Task</Text>
-              </TouchableOpacity>
-            </View>
-            
-            {/* Background logs */}
-            <View style={styles.logsContainer}>
-              <View style={styles.logsHeader}>
-                <Text style={styles.debugSubtitle}>Background Task Logs</Text>
-                <TouchableOpacity 
-                  style={styles.smallButton}
-                  onPress={loadBackgroundLogs}
-                >
-                  <Text style={styles.smallButtonText}>Refresh</Text>
-                </TouchableOpacity>
-                <TouchableOpacity 
-                  style={styles.smallButton}
-                  onPress={handleClearLogs}
-                >
-                  <Text style={styles.smallButtonText}>Clear</Text>
-                </TouchableOpacity>
-              </View>
-              
-              {backgroundLogs.length === 0 ? (
-                <Text style={styles.debugText}>No logs available</Text>
-              ) : (
-                backgroundLogs.map((log, index) => {
-                  return (
-                    <View key={index} style={styles.logEntry}>
-                      <Text style={styles.logTimestamp}>
-                        {new Date(log.timestamp).toLocaleString()}
-                      </Text>
-                      <Text style={styles.logMessage}>{log.message}</Text>
-                    </View>
-                  );
-                }).filter(Boolean)
-              )}
-            </View>
-          </View>
-        )}
+        {/* Debug panel */}
+        <DebugPanel
+          showDebugInfo={showDebugInfo}
+          toggleDebugInfo={toggleDebugInfo}
+          isWeb={isWeb}
+          backgroundStatus={backgroundStatus}
+          detailedTaskStatus={detailedTaskStatus}
+          backgroundLogs={backgroundLogs}
+          checkBackgroundStatus={checkBackgroundStatus}
+          checkDetailedBackgroundStatus={checkDetailedBackgroundStatus}
+          loadBackgroundLogs={loadBackgroundLogs}
+          handleClearLogs={handleClearLogs}
+          handleRegisterBackgroundTask={handleRegisterBackgroundTask}
+          handleUnregisterBackgroundTask={handleUnregisterBackgroundTask}
+        />
       </View>
     </ScrollView>
   );
 }
-
