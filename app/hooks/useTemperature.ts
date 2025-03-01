@@ -1,14 +1,16 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getValidAccessToken } from '../services/auth';
 import { updateLastTemperature } from '../services/notifications';
+import { useAuthStore } from '../stores/authStore';
 
 export interface TemperatureData {
   temperature: number;
   lastUpdated: Date;
 }
 
-export const useTemperature = (onAuthError?: () => void) => {
+export const useTemperature = () => {
   const queryClient = useQueryClient();
+  const { setAuthenticated } = useAuthStore();
 
   const fetchTemperature = async (): Promise<TemperatureData> => {
     try {
@@ -46,10 +48,8 @@ export const useTemperature = (onAuthError?: () => void) => {
         // Invalidate queries that depend on authentication
         queryClient.invalidateQueries({ queryKey: ['temperature'] });
         
-        // Call the onAuthError callback if provided
-        if (onAuthError) {
-          onAuthError();
-        }
+        // Update auth state
+        setAuthenticated(false);
       }
       throw err;
     }
@@ -62,6 +62,6 @@ export const useTemperature = (onAuthError?: () => void) => {
     staleTime: 5 * 60 * 1000, // Consider data stale after 5 minutes
     retry: 3,
     refetchOnWindowFocus: true,
-    enabled: true, // Only fetch when authenticated
+    enabled: useAuthStore.getState().isAuthenticated, // Only fetch when authenticated
   });
 }; 
