@@ -44,7 +44,13 @@
     "web": {
       "bundler": "metro",
       "output": "static",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/images/favicon.png",
+      "name": "Temperature Monitor",
+      "shortName": "TempMonitor",
+      "lang": "en-US",
+      "themeColor": "#ffffff",
+      "backgroundColor": "#ffffff",
+      "description": "Monitor your outside temperature"
     },
     "plugins": [
       "expo-router",

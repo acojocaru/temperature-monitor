@@ -1,4 +1,4 @@
-import { Text, View, StyleSheet, TextInput, TouchableOpacity, Alert, ScrollView } from "react-native";
+import { Text, View, StyleSheet, TextInput, TouchableOpacity, Alert, ScrollView, Platform } from "react-native";
 import React, { useEffect, useState, useRef } from "react";
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { styles } from './styles';
@@ -22,7 +22,7 @@ import {
 // Storage keys
 const TEMP_RANGE_STORAGE_KEY = 'temperature_range';
 
-export default function Index() {
+export default function TemperatureMonitor() {
   const [temperature, setTemperature] = useState<number | null>(null);
   const [previousTemperature, setPreviousTemperature] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
@@ -38,6 +38,7 @@ export default function Index() {
   const [detailedTaskStatus, setDetailedTaskStatus] = useState<any>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const [isWeb, setIsWeb] = useState(false);
 
   // Load temperature range from storage on component mount
   useEffect(() => {
@@ -149,8 +150,16 @@ export default function Index() {
     }
   }, [isAuthenticated]);
 
+  // Check platform on mount
+  useEffect(() => {
+    setIsWeb(Platform.OS === 'web');
+  }, []);
+
   // Request permissions and set up background fetch on first load
   useEffect(() => {
+    // Skip background task setup on web
+    if (isWeb) return;
+
     const setupNotifications = async () => {
       try {
         console.log('Setting up notifications and background fetch...');
@@ -200,7 +209,7 @@ export default function Index() {
     return () => {
       clearInterval(backgroundStatusInterval);
     };
-  }, [showDebugInfo]);
+  }, [showDebugInfo, isWeb]);
 
   const fetchTemperature = async () => {
     try {
@@ -403,6 +412,12 @@ export default function Index() {
   };
 
   const toggleDebugInfo = async () => {
+    // Don't allow toggling debug info on web
+    if (isWeb) {
+      Alert.alert('Not Available', 'Background tasks are not supported in web environments.');
+      return;
+    }
+    
     const newState = !showDebugInfo;
     setShowDebugInfo(newState);
     
@@ -519,18 +534,20 @@ export default function Index() {
           </TouchableOpacity>
         )}
         
-        {/* Debug section toggle */}
-        <TouchableOpacity 
-          style={styles.debugButton}
-          onPress={toggleDebugInfo}
-        >
-          <Text style={styles.buttonText}>
-            {showDebugInfo ? "Hide Debug Info" : "Show Debug Info"}
-          </Text>
-        </TouchableOpacity>
+        {/* Debug section toggle - hide on web */}
+        {!isWeb && (
+          <TouchableOpacity 
+            style={styles.debugButton}
+            onPress={toggleDebugInfo}
+          >
+            <Text style={styles.buttonText}>
+              {showDebugInfo ? "Hide Debug Info" : "Show Debug Info"}
+            </Text>
+          </TouchableOpacity>
+        )}
         
         {/* Debug information section */}
-        {showDebugInfo && (
+        {showDebugInfo && !isWeb && (
           <View style={styles.debugContainer}>
             <Text style={styles.debugTitle}>Debug Information</Text>
             
