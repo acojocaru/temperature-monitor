@@ -1,22 +1,23 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
 import { styles } from '../styles';
+import { TemperatureData } from '../hooks/useTemperature';
 
 interface TemperatureDisplayProps {
-  temperature: number | null;
-  loading: boolean;
-  error: string | null;
-  lastUpdated: Date | null;
+  data?: TemperatureData;
+  isLoading: boolean;
+  isError: boolean;
+  error: Error | null;
   lowTemp: string;
   highTemp: string;
   isTemperatureInRange: () => boolean;
 }
 
 const TemperatureDisplay: React.FC<TemperatureDisplayProps> = ({
-  temperature,
-  loading,
+  data,
+  isLoading,
+  isError,
   error,
-  lastUpdated,
   lowTemp,
   highTemp,
   isTemperatureInRange,
@@ -32,16 +33,21 @@ const TemperatureDisplay: React.FC<TemperatureDisplayProps> = ({
     });
   };
 
-  if (loading) {
-    return <Text style={styles.message}>Loading...</Text>;
+  if (isLoading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#0000ff" />
+        <Text style={styles.message}>Loading temperature data...</Text>
+      </View>
+    );
   }
 
-  if (error) {
-    return <Text style={styles.errorMessage}>Error: {error}</Text>;
+  if (isError) {
+    return <Text style={styles.errorMessage}>Error: {error?.message || 'Failed to fetch temperature'}</Text>;
   }
 
-  if (temperature === null) {
-    return null;
+  if (!data) {
+    return <Text style={styles.message}>No temperature data available</Text>;
   }
 
   return (
@@ -50,12 +56,12 @@ const TemperatureDisplay: React.FC<TemperatureDisplayProps> = ({
         styles.temperature, 
         isTemperatureInRange() ? styles.tempInRange : styles.tempOutOfRange
       ]}>
-        {temperature}°C
+        {data.temperature}°C
       </Text>
       <Text style={styles.description}>Current Outside Temperature</Text>
-      {lastUpdated && (
+      {data.lastUpdated && (
         <Text style={styles.lastUpdated}>
-          Last updated: {formatDateTime(lastUpdated)}
+          Last updated: {formatDateTime(data.lastUpdated)}
         </Text>
       )}
       <Text style={styles.rangeInfo}>

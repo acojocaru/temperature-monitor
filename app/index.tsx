@@ -1,12 +1,11 @@
 import { View, ScrollView, Alert, Platform } from "react-native";
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, useCallback } from "react";
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { styles } from './styles';
 import * as Linking from 'expo-linking';
 import { 
   registerBackgroundFetch, 
   requestNotificationsPermissions,
-  updateLastTemperature,
   isBackgroundFetchRegistered,
   getBackgroundLogs,
   clearBackgroundLogs,
@@ -18,6 +17,9 @@ import {
   getValidAccessToken,
   logout
 } from './services/auth';
+
+// React Query
+import { useTemperature } from './hooks/useTemperature';
 
 // Components
 import TemperatureDisplay from './components/TemperatureDisplay';
@@ -31,12 +33,8 @@ import Header from './components/Header';
 const TEMP_RANGE_STORAGE_KEY = 'temperature_range';
 
 export default function TemperatureMonitor() {
-  const [temperature, setTemperature] = useState<number | null>(null);
   const [previousTemperature, setPreviousTemperature] = useState<number | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [lowTemp, setLowTemp] = useState<string>("15");
   const [highTemp, setHighTemp] = useState<string>("25");
   const [showRangeInput, setShowRangeInput] = useState(false);
@@ -44,9 +42,33 @@ export default function TemperatureMonitor() {
   const [backgroundStatus, setBackgroundStatus] = useState<any>(null);
   const [backgroundLogs, setBackgroundLogs] = useState<any[]>([]);
   const [detailedTaskStatus, setDetailedTaskStatus] = useState<any>(null);
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const [isWeb, setIsWeb] = useState(false);
+
+  // Handle authentication errors in the temperature query
+  const handleAuthError = useCallback(() => {
+    setIsAuthenticated(false);
+  }, []);
+
+  // Use React Query for temperature data
+  const { 
+    data: temperatureData, 
+    isLoading, 
+    isError, 
+    error, 
+    refetch: refetchTemperature 
+  } = useTemperature(handleAuthError);
+
+  // Update previous temperature when new data arrives
+  useEffect(() => {
+    if (temperatureData?.temperature !== undefined && previousTemperature !== temperatureData.temperature) {
+      // Store previous temperature before updating
+      if (previousTemperature !== null) {
+        // Check for temperature transitions
+        checkTemperatureTransition(temperatureData.temperature);
+      }
+      setPreviousTemperature(temperatureData.temperature);
+    }
+  }, [temperatureData?.temperature]);
 
   // Load temperature range from storage on component mount
   useEffect(() => {
@@ -72,11 +94,8 @@ export default function TemperatureMonitor() {
           console.error('Error loading temperature range:', storageError);
           // Continue with default values if loading fails
         }
-        
-        setLoading(false);
       } catch (err) {
         console.error('Error loading stored data:', err);
-        setLoading(false);
       }
     };
     
@@ -110,52 +129,6 @@ export default function TemperatureMonitor() {
     return () => {
       subscription.remove();
     };
-  }, [isAuthenticated]);
-
-  // Set up scheduled fetching
-  useEffect(() => {
-    if (isAuthenticated) {
-      // Initial fetch
-      fetchTemperature();
-      
-      // Set up timer for next fetch at the next 15-minute mark
-      const setupNextFetch = () => {
-        const now = new Date();
-        const minutes = now.getMinutes();
-        const secondsToNextQuarter = ((15 - (minutes % 15)) * 60) - now.getSeconds();
-        
-        // Clear any existing timers
-        if (timerRef.current) {
-          clearTimeout(timerRef.current);
-        }
-        if (intervalRef.current) {
-          clearInterval(intervalRef.current);
-        }
-        
-        // Set timer for next fetch
-        timerRef.current = setTimeout(() => {
-          fetchTemperature();
-          // After fetching, set up the next 15-minute interval
-          intervalRef.current = setInterval(() => {
-            fetchTemperature();
-          }, 15 * 60 * 1000);
-        }, secondsToNextQuarter * 1000);
-      };
-      
-      setupNextFetch();
-      
-      // Cleanup function
-      return () => {
-        if (timerRef.current) {
-          clearTimeout(timerRef.current);
-        }
-        if (intervalRef.current) {
-          clearInterval(intervalRef.current);
-        }
-      };
-    } else {
-      setLoading(false);
-    }
   }, [isAuthenticated]);
 
   // Check platform on mount
@@ -219,59 +192,6 @@ export default function TemperatureMonitor() {
     };
   }, [showDebugInfo, isWeb]);
 
-  const fetchTemperature = async () => {
-    try {
-      setLoading(true);
-      
-      // Get a valid token (will refresh if needed)
-      const token = await getValidAccessToken();
-      
-      const response = await fetch(
-        'https://api.viessmann.com/iot/v1/equipment/installations/2585628/gateways/7736172150862221/devices/0/features/heating.sensors.temperature.outside',
-        {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        }
-      );
-      
-      if (!response.ok) {
-        throw new Error(`Failed to fetch temperature data: ${response.status}`);
-      }
-      
-      const data = await response.json();
-      // Access the temperature value from the correct path in the response
-      const tempValue = data.data.properties.value.value;
-      
-      // Store previous temperature before updating
-      if (temperature !== null) {
-        setPreviousTemperature(temperature);
-      }
-      
-      setTemperature(tempValue);
-      setLastUpdated(new Date());
-      setError(null);
-      
-      // Update last temperature in storage for background checks
-      await updateLastTemperature(tempValue);
-      
-      // Check for temperature range transitions
-      checkTemperatureTransition(tempValue);
-      
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'An unknown error occurred');
-      console.error('Error fetching temperature:', err);
-      
-      // If there's an authentication error, set isAuthenticated to false
-      if (err instanceof Error && 
-          (err.message.includes('token') || err.message.includes('auth'))) {
-        setIsAuthenticated(false);
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const checkTemperatureTransition = (currentTemp: number) => {
     if (previousTemperature === null) return;
     
@@ -305,14 +225,12 @@ export default function TemperatureMonitor() {
 
   const handleLogin = async () => {
     try {
-      setLoading(true);
       await startAuthentication();
       setIsAuthenticated(true);
+      // Trigger a refetch after login
+      refetchTemperature();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Authentication failed');
       console.error('Login error:', err);
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -322,7 +240,6 @@ export default function TemperatureMonitor() {
       await unregisterBackgroundFetch();
       await logout();
       setIsAuthenticated(false);
-      setTemperature(null);
       setPreviousTemperature(null);
     } catch (err) {
       console.error('Logout error:', err);
@@ -336,12 +253,12 @@ export default function TemperatureMonitor() {
       const high = parseFloat(highTemp);
       
       if (isNaN(low) || isNaN(high)) {
-        setError('Please enter valid numbers for temperature range');
+        Alert.alert('Error', 'Please enter valid numbers for temperature range');
         return;
       }
       
       if (low >= high) {
-        setError('Low temperature must be less than high temperature');
+        Alert.alert('Error', 'Low temperature must be less than high temperature');
         return;
       }
       
@@ -352,20 +269,29 @@ export default function TemperatureMonitor() {
       );
       
       setShowRangeInput(false);
-      setError(null);
+      
+      // Check if current temperature is in the new range
+      if (temperatureData?.temperature) {
+        const isInRange = temperatureData.temperature >= low && temperatureData.temperature <= high;
+        if (isInRange) {
+          Alert.alert('Temperature Status', `Current temperature (${temperatureData.temperature}°C) is within the new range.`);
+        } else {
+          Alert.alert('Temperature Status', `Current temperature (${temperatureData.temperature}°C) is outside the new range.`);
+        }
+      }
     } catch (err) {
       console.error('Error saving temperature range:', err);
-      setError('Failed to save temperature range');
+      Alert.alert('Error', 'Failed to save temperature range');
     }
   };
 
   const isTemperatureInRange = () => {
-    if (temperature === null) return false;
+    if (!temperatureData?.temperature) return false;
     
     const low = parseFloat(lowTemp);
     const high = parseFloat(highTemp);
     
-    return temperature >= low && temperature <= high;
+    return temperatureData.temperature >= low && temperatureData.temperature <= high;
   };
 
   const checkBackgroundStatus = async () => {
@@ -452,20 +378,20 @@ export default function TemperatureMonitor() {
         
         {/* Temperature display */}
         <TemperatureDisplay
-          temperature={temperature}
-          loading={loading}
-          error={error}
-          lastUpdated={lastUpdated}
+          data={temperatureData}
+          isLoading={isLoading}
+          isError={isError}
+          error={error as Error}
           lowTemp={lowTemp}
           highTemp={highTemp}
           isTemperatureInRange={isTemperatureInRange}
         />
         
         {/* Refresh button - only show if authenticated */}
-        {!loading && isAuthenticated && (
+        {!isLoading && isAuthenticated && (
           <RefreshButton 
-            onPress={fetchTemperature}
-            loading={loading}
+            onPress={() => refetchTemperature()}
+            loading={isLoading}
           />
         )}
         

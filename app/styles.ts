@@ -10,6 +10,11 @@ export const styles = StyleSheet.create({
   scrollContainer: {
     flex: 1,
   },
+  loadingContainer: {
+    padding: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   title: {
     fontSize: 28,
     fontWeight: "bold",
